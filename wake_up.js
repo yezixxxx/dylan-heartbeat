@@ -163,7 +163,22 @@ function isDayTime(date = new Date()) {
   if (start < end) return hour >= start && hour < end;
   return hour >= start || hour < end;
 }
+function isQuietHours(date = new Date()) {
+  const hour = getHourInTimeZone(date, TIME_ZONE);
+  return hour >= 0 && hour < 8;
+}
 
+function getQuietHoursEndDelayMs(date = new Date()) {
+  const parts = getDatePartsInTimeZone(date, TIME_ZONE);
+  const quietEnd = zonedWallTimeToDate({
+    year: parts.year,
+    month: parts.month,
+    day: parts.day,
+    hour: 8,
+    minute: 0
+  }, TIME_ZONE);
+  return Math.max(1000, quietEnd.getTime() - date.getTime());
+}
 function getWakeAfterMinutes(date = new Date()) {
   return isDayTime(date)
     ? readNumberEnv("DAY_WAKE_AFTER_MINUTES", 60, { min: 1 })
@@ -399,7 +414,10 @@ ${weatherContext ? `\n${weatherContext}\n` : ""}
 `;
 }
 
-async function runWakeUp() {
+async function runWakeUp() {  if (isQuietHours()) {
+    console.log("当前处于 00:00–08:00 静默时段，跳过模型唤醒");
+    return;
+  }
   console.log("\n==========================");
   console.log("开始自动唤醒");
   console.log("==========================\n");
@@ -612,7 +630,13 @@ function getCheckIntervalMs() {
   return getCheckIntervalMinutes(new Date()) * 60 * 1000;
 }
 
-async function scheduleNextCheck() {
+async function scheduleNextCheck() {  
+  if (isQuietHours()) {
+    const delayMs = getQuietHoursEndDelayMs();
+    console.log("当前处于 00:00–08:00 静默时段，暂停后台检查；将在早上 08:00 恢复");
+    setTimeout(scheduleNextCheck, delayMs);
+    return;
+  }
   try {
     // 发送心跳
     try {
